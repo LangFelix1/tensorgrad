@@ -76,7 +76,10 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), _op='sum')
 
         def _backward():
-            self.grad += out.grad
+            grad = out.grad
+            if not keepdim and dim is not None:
+                grad = Tensor.expand_like(grad, self.data.shape, dim)
+            self.grad += grad
         out._backward = _backward
 
         return out
@@ -84,7 +87,6 @@ class Tensor:
     def backward(self):
         self.grad = cp.ones_like(self.data)
 
-        # Simple topological traversal
         visited = set()
         topo = []
 
@@ -101,9 +103,22 @@ class Tensor:
             t._backward()
     
     @staticmethod
+    def expand_like(x, target_shape, dims_reduced):
+        """
+        Expand tensor x to match target_shape by adding dimensions at dims_reduced
+        """
+        if isinstance(dims_reduced, int):
+            dims_reduced = (dims_reduced,)
+
+        for dim in sorted(dims_reduced):
+            x = cp.expand_dims(x, axis=dim)
+
+        return cp.broadcast_to(x, target_shape)
+
+    @staticmethod
     def unbroadcast(x, target_shape):
         """
-        Reduces shape of x back to target_shape by summing over broadcasted dimensions
+        Reduces shape of tensor x back to target_shape by summing over broadcasted dimensions
         """
         while x.ndim > len(target_shape):
             x = x.sum(axis=0)
