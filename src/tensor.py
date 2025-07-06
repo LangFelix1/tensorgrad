@@ -1,7 +1,7 @@
 import cupy as cp
 
 class Tensor:
-    def __init__(self, data, _prev=(), _op=''):
+    def __init__(self, data, _prev=()):
         if not isinstance(data, cp.ndarray):
             data = cp.array(data, dtype=cp.float32)
         else:
@@ -12,11 +12,10 @@ class Tensor:
 
         self._backward = lambda: None
         self._prev = set(_prev)
-        self._op = _op
 
     def __add__(self, other):
         other = Tensor._ensure_tensor(other)
-        out = Tensor(self.data + other.data, (self, other), '+')
+        out = Tensor(self.data + other.data, (self, other))
 
         def _backward():
             self.grad += Tensor.unbroadcast(out.grad, self.data.shape)
@@ -30,7 +29,7 @@ class Tensor:
     
     def __mul__(self, other):
         other = Tensor._ensure_tensor(other)
-        out = Tensor(self.data * other.data, (self, other), '*')
+        out = Tensor(self.data * other.data, (self, other))
 
         def _backward():
             self.grad += Tensor.unbroadcast(other.data * out.grad, self.data.shape)
@@ -44,7 +43,7 @@ class Tensor:
 
     def __pow__(self, other):
         other = Tensor._ensure_tensor(other)
-        out = Tensor(self.data ** other.data, (self, other), f'**{other}')
+        out = Tensor(self.data ** other.data, (self, other))
 
         def _backward():
             self.grad += Tensor.unbroadcast((other.data * self.data**(other.data - 1)) * out.grad, self.data.shape)
@@ -56,7 +55,7 @@ class Tensor:
     def __matmul__(self, other):
         other = Tensor._ensure_tensor(other)       
         out_data = cp.matmul(self.data, other.data)
-        out = Tensor(out_data, (self, other), '@')
+        out = Tensor(out_data, (self, other))
 
         def _backward():
             self.grad += Tensor.unbroadcast(cp.matmul(out.grad, other.data.T), self.data.shape)
@@ -68,12 +67,24 @@ class Tensor:
     def __neg__(self):
         return self * -1
     
+    def __radd__(self, other):
+        return self + other
+    
+    def __rsub__(self, other):
+        return Tensor._ensure_tensor(other) - self
+    
     def __rmul__(self, other):
         return self * other
+    
+    def __rtruediv__(self, other):
+        return Tensor._ensure_tensor(other) / self
+    
+    def __rpow__(self, other):
+        return Tensor._ensure_tensor(other) ** self
 
     def sum(self, dim=None, keepdim=False):
         out_data = cp.sum(self.data, axis=dim, keepdims=keepdim)
-        out = Tensor(out_data, _prev=(self,), _op='sum')
+        out = Tensor(out_data, _prev=(self,))
 
         def _backward():
             grad = out.grad
