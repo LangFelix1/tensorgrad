@@ -104,7 +104,100 @@ class Tensor:
         out._backward = _backward
 
         return out
-    
+
+    def mean(self, dim=None, keepdim=False):
+        out = self.sum(dim=dim, keepdim=keepdim)
+        if dim is None:
+            divisor = self.data.size
+        else:
+            divisor = self.data.shape[dim] if isinstance(dim, int) else cp.prod([self.data.shape[d] for d in dim])
+
+        return out / cp.array(divisor, dtype=self.data.dtype)
+
+    def reshape(self, *shape):
+        out_data = self.data.reshape(*shape)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            Tensor._accumulate_grad(self, out.grad.reshape(self.data.shape))
+        out._backward = _backward
+
+        return out
+
+    def transpose(self, dim0, dim1):
+        dims = list(range(self.ndim))
+        dims[dim0], dims[dim1] = dims[dim1], dims[dim0]
+        return self.permute(*dims)
+
+    def permute(self, *dims):
+        out_data = self.data.transpose(*dims)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            reverse_dims = cp.argsort(dims) if dims else None
+            Tensor._accumulate_grad(self, out.grad.transpose(*reverse_dims))
+        out._backward = _backward
+
+        return out
+
+    def exp(self):
+        out_data = cp.exp(self.data)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            Tensor._accumulate_grad(self, out.data * out.grad)
+        out._backward = _backward
+
+        return out
+
+    def log(self):
+        out_data = cp.log(self.data)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            with cp.errstate(divide='ignore', invalid='ignore'):
+                Tensor._accumulate_grad(self, out.grad / self.data)
+        out._backward = _backward
+
+        return out
+
+    def tanh(self):
+        out_data = cp.tanh(self.data)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            Tensor._accumulate_grad(self, (1 - out.data**2) * out.grad)
+        out._backward = _backward
+
+        return out
+
+    def sigmoid(self):
+        out_data = 1 / (1 + cp.exp(-self.data))
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            Tensor._accumulate_grad(self, (out.data - out.data**2) * out.grad)
+        out._backward = _backward
+
+        return out
+
+    def relu(self):
+        out_data = cp.maximum(0, self.data)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            Tensor._accumulate_grad(self, (self.data > 0).astype(self.data.dtype) * out.grad)
+        out._backward = _backward
+
+        return out
+
+    def gelu(self):
+        """
+        Approximate implementation of GeLU, corresponds to torch.nn.functional.gelu with approximate="tanh"
+        """
+        c = cp.sqrt(2 / cp.pi)
+        return 0.5 * self * (1 + ((self + 0.044715 * self ** 3) * c).tanh())
+
     def backward(self, gradient=None):
         if not self.requires_grad:
             raise RuntimeError("Tensor does not require gradient")
