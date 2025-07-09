@@ -37,3 +37,50 @@ class Module:
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError
+    
+class Linear(Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.weight = Tensor(np.random.randn(out_features, in_features) * np.sqrt(2. / in_features), requires_grad=True)
+        self.bias = Tensor(np.zeros(out_features), requires_grad=True) if bias else None
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(in_features={self.weight.shape[1]}, out_features={self.weight.shape[0]}, bias={self.bias is not None})"
+
+    def forward(self, x):
+        out = x @ self.weight.T
+        if self.bias is not None:
+            out = out + self.bias
+        return out
+    
+class ReLU(Module):
+    def __repr__(self):
+      return f"{self.__class__.__name__}()"
+
+    def forward(self, x):
+        return x.relu()
+    
+class Tanh(Module):
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
+    def forward(self, x):
+        return x.tanh()
+    
+class Sequential(Module):
+    def __init__(self, *modules):
+        super().__init__()
+        self._modules_list = []
+
+        for idx, module in enumerate(modules):
+            assert isinstance(module, Module) #, f"All elements must be Module instances, got {type(module)}"
+            self._modules_list.append(module)
+            self._modules[str(idx)] = module
+
+    def forward(self, x):
+        for module in self._modules_list:
+            x = module(x)
+        return x
+
+    def __getitem__(self, idx):
+        return self._modules_list[idx]
