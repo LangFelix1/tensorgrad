@@ -1,3 +1,4 @@
+import cupy as cp
 from tensor import Tensor
 
 class Module:
@@ -41,8 +42,8 @@ class Module:
 class Linear(Module):
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
-        self.weight = Tensor(np.random.randn(out_features, in_features) * np.sqrt(2. / in_features), requires_grad=True)
-        self.bias = Tensor(np.zeros(out_features), requires_grad=True) if bias else None
+        self.weight = Tensor(cp.random.randn(out_features, in_features) * cp.sqrt(2. / in_features), requires_grad=True)
+        self.bias = Tensor(cp.zeros(out_features), requires_grad=True) if bias else None
 
     def __repr__(self):
         return f"{self.__class__.__name__}(in_features={self.weight.shape[1]}, out_features={self.weight.shape[0]}, bias={self.bias is not None})"
