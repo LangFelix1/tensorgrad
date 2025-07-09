@@ -14,6 +14,27 @@ class Tensor:
         self._backward = lambda: None
         self._prev = set(_prev)
 
+    @property
+    def shape(self):
+        return self.data.shape
+
+    @property
+    def dtype(self):
+        return self.data.dtype
+
+    @property
+    def ndim(self):
+        return self.data.ndim
+
+    @property
+    def size(self):
+        return self.data.size
+
+    @property
+    def T(self):
+        axes = tuple(reversed(range(self.ndim)))
+        return self.permute(*axes)
+
     def __add__(self, other):
         other = Tensor._ensure_tensor(other)
 
