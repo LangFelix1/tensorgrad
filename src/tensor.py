@@ -161,6 +161,44 @@ class Tensor:
         out._backward = _backward
 
         return out
+    
+    def squeeze(self, dim=None):
+        if dim is None:
+            out = Tensor(cp.squeeze(self.data), _prev=(self,), requires_grad=self.requires_grad)
+
+            def _backward():
+                grad = out.grad.reshape(self.data.shape)
+                Tensor._accumulate_grad(self, grad)
+            out._backward = _backward
+
+            return out
+
+        if self.shape[dim] != 1:
+            return self
+
+        out = Tensor(cp.squeeze(self.data, axis=dim), _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            grad = out.grad
+            shape = list(self.shape)
+            grad = grad.reshape(shape[:dim] + [1] + shape[dim:])
+            Tensor._accumulate_grad(self, grad)
+        out._backward = _backward
+
+        return out
+
+    def unsqueeze(self, dim):
+        out_data = cp.expand_dims(self.data, axis=dim)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            grad = out.grad
+            grad = cp.squeeze(grad, axis=dim)
+            Tensor._accumulate_grad(self, grad)
+
+        out._backward = _backward
+
+        return out
 
     def exp(self):
         out_data = cp.exp(self.data)
