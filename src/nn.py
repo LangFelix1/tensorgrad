@@ -1,5 +1,5 @@
 import cupy as cp
-from tensor import Tensor
+from src.tensor import Tensor
 
 class Module:
     def __init__(self):
@@ -85,3 +85,18 @@ class Sequential(Module):
 
     def __getitem__(self, idx):
         return self._modules_list[idx]
+    
+class MSELoss(Module):
+    def __init__(self, reduction="mean"):
+        super().__init__()
+        assert reduction in ("mean", "sum")
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        diff = input - target
+        loss = diff * diff
+
+        if self.reduction == "mean":
+            return loss.mean()
+        else:
+            return loss.sum()

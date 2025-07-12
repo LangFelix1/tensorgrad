@@ -1,4 +1,5 @@
 import cupy as cp
+import numpy as np
 
 class Tensor:
     def __init__(self, data, _prev=(), requires_grad=False):
@@ -74,7 +75,7 @@ class Tensor:
         out = Tensor(self.data ** other.data, (self, other),requires_grad=requires_grad)
 
         def _backward():
-            with cp.errstate(divide='ignore', invalid='ignore'):
+            #with cp.errstate(divide='ignore', invalid='ignore'):
                 Tensor._accumulate_grad(self, Tensor._unbroadcast((other.data * self.data**(other.data - 1)) * out.grad, self.data.shape))
                 Tensor._accumulate_grad(other, Tensor._unbroadcast((out.data * cp.log(self.data)) * out.grad, other.data.shape))
         out._backward = _backward
@@ -155,7 +156,7 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            reverse_dims = cp.argsort(dims) if dims else None
+            reverse_dims = np.argsort(dims) if dims else None
             Tensor._accumulate_grad(self, out.grad.transpose(*reverse_dims))
         out._backward = _backward
 
@@ -176,7 +177,7 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            with cp.errstate(divide='ignore', invalid='ignore'):
+            #with cp.errstate(divide='ignore', invalid='ignore'):
                 Tensor._accumulate_grad(self, out.grad / self.data)
         out._backward = _backward
 
