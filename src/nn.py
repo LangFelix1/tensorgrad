@@ -100,3 +100,24 @@ class MSELoss(Module):
             return loss.mean()
         else:
             return loss.sum()
+        
+class CrossEntropyLoss(Module):
+    def __init__(self, reduction="mean"):
+        super().__init__()
+        assert reduction in ("mean", "sum")
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        """
+        logits: Tensor of shape (B, C)
+        targets: Tensor of shape (B,) with integer class indices
+        """
+        log_probs = logits.log_softmax(dim=1)                 # shape: (B, C)
+        targets = targets.unsqueeze(1)                        # shape: (B, 1)
+        picked_log_probs = log_probs.gather(targets, dim=1)   # shape: (B, 1)
+        loss = -picked_log_probs.squeeze(1)                   # shape: (B,)
+
+        if self.reduction == "mean":
+            return loss.mean()
+        else:
+            return loss.sum()
