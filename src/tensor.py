@@ -115,7 +115,7 @@ class Tensor:
         return Tensor._ensure_tensor(other) ** self
     
     def max(self, dim=None, keepdim=False):
-        out_data = np.max(self.data, axis=dim, keepdims=keepdim)
+        out_data = cp.max(self.data, axis=dim, keepdims=keepdim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -214,12 +214,12 @@ class Tensor:
         return out
     
     def gather(self, dim, index):
-        out_data = np.take_along_axis(self.data, index.data, axis=dim)
+        out_data = cp.take_along_axis(self.data, index.data, axis=dim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            grad = np.zeros_like(self.data)
-            np.put_along_axis(grad, index.data, out.grad, axis=dim)
+            grad = cp.zeros_like(self.data)
+            cp.put_along_axis(grad, index.data, out.grad, axis=dim)
             Tensor._accumulate_grad(self, grad)
 
         out._backward = _backward
@@ -281,6 +281,23 @@ class Tensor:
         """
         c = cp.sqrt(2 / cp.pi)
         return 0.5 * self * (1 + ((self + 0.044715 * self ** 3) * c).tanh())
+    
+    def logsumexp(self, dim=None, keepdim=False):
+        max_val = self.max(dim=dim, keepdim=True)
+
+        shifted = self - max_val
+        exp_shifted = shifted.exp()
+
+        sum_exp = exp_shifted.sum(dim=dim, keepdim=keepdim)
+        log_sum_exp = sum_exp.log()
+
+        if keepdim:
+            return log_sum_exp + max_val
+        else:
+            return log_sum_exp + max_val.squeeze(dim)
+        
+    def log_softmax(self, dim):
+        return self - self.logsumexp(dim=dim, keepdim=True)
 
     def backward(self, gradient=None):
         if not self.requires_grad:
