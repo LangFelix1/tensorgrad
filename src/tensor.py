@@ -113,6 +113,19 @@ class Tensor:
 
     def __rpow__(self, other):
         return Tensor._ensure_tensor(other) ** self
+    
+    def max(self, dim=None, keepdim=False):
+        out_data = np.max(self.data, axis=dim, keepdims=keepdim)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            grad = (self.data == out.data) * out.grad
+            if not keepdim and dim is not None:
+                grad = Tensor._expand_like(grad, self.data.shape, dim)
+            Tensor._accumulate_grad(self, grad)
+        out._backward = _backward
+
+        return out
 
     def sum(self, dim=None, keepdim=False):
         out_data = cp.sum(self.data, axis=dim, keepdims=keepdim)
@@ -199,6 +212,17 @@ class Tensor:
         out._backward = _backward
 
         return out
+    
+    def gather(self, dim, index):
+        out_data = np.take_along_axis(self.data, index.data, axis=dim)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            grad = np.zeros_like(self.data)
+            np.put_along_axis(grad, index.data, out.grad, axis=dim)
+            Tensor._accumulate_grad(self, grad)
+
+        out._backward = _backward
 
     def exp(self):
         out_data = cp.exp(self.data)
