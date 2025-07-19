@@ -119,7 +119,10 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            grad = (self.data == out.data) * out.grad
+            od = out_data if (dim is None or keepdim) else cp.expand_dims(out.data, axis=dim)  # need to expand out_data to make it broadcastable with self.data
+            mask = (self.data == od).astype(self.data.dtype)
+            count = cp.sum(mask, axis=dim, keepdims=True)
+            grad = (mask / count) * out.grad
             if not keepdim and dim is not None:
                 grad = Tensor._expand_like(grad, self.data.shape, dim)
             Tensor._accumulate_grad(self, grad)
@@ -162,6 +165,7 @@ class Tensor:
     def transpose(self, dim0, dim1):
         dims = list(range(self.ndim))
         dims[dim0], dims[dim1] = dims[dim1], dims[dim0]
+
         return self.permute(*dims)
 
     def permute(self, *dims):
@@ -174,28 +178,13 @@ class Tensor:
         out._backward = _backward
 
         return out
-    
+
     def squeeze(self, dim=None):
-        if dim is None:
-            out = Tensor(cp.squeeze(self.data), _prev=(self,), requires_grad=self.requires_grad)
-
-            def _backward():
-                grad = out.grad.reshape(self.data.shape)
-                Tensor._accumulate_grad(self, grad)
-            out._backward = _backward
-
-            return out
-
-        if self.shape[dim] != 1:
-            return self
-
-        out = Tensor(cp.squeeze(self.data, axis=dim), _prev=(self,), requires_grad=self.requires_grad)
+        out_data = cp.squeeze(self.data, dim)
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            grad = out.grad
-            shape = list(self.shape)
-            grad = grad.reshape(shape[:dim] + [1] + shape[dim:])
-            Tensor._accumulate_grad(self, grad)
+            Tensor._accumulate_grad(self, out.grad.reshape(self.shape))
         out._backward = _backward
 
         return out
@@ -205,9 +194,7 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            grad = out.grad
-            grad = cp.squeeze(grad, axis=dim)
-            Tensor._accumulate_grad(self, grad)
+            Tensor._accumulate_grad(self, cp.squeeze(out.grad, axis=dim))
 
         out._backward = _backward
 
@@ -223,6 +210,8 @@ class Tensor:
             Tensor._accumulate_grad(self, grad)
 
         out._backward = _backward
+
+        return out
 
     def exp(self):
         out_data = cp.exp(self.data)
@@ -296,7 +285,7 @@ class Tensor:
         else:
             return log_sum_exp + max_val.squeeze(dim)
         
-    def log_softmax(self, dim):
+    def log_softmax(self, dim=None):
         return self - self.logsumexp(dim=dim, keepdim=True)
 
     def backward(self, gradient=None):
@@ -366,6 +355,7 @@ class Tensor:
         for i, (g, t) in enumerate(zip(x.shape, target_shape)):
             if g != t:
                 x = x.sum(axis=i, keepdims=True)
+
         return x.reshape(target_shape)
 
     @staticmethod
