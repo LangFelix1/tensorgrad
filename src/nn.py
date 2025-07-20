@@ -121,3 +121,60 @@ class CrossEntropyLoss(Module):
             return loss.mean()
         else:
             return loss.sum()
+        
+class Dropout(Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(p={self.p})"
+
+    def forward(self, x):
+        if self.training:
+            mask = (np.random.rand(*x.shape) > self.p).astype(x.data.dtype)
+            return x * Tensor(mask) / (1 - self.p)
+        else:
+            return x
+        
+class BatchNorm1d(Module):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
+        super().__init__()
+        self.eps = eps
+        self.momentum = momentum
+        self.affine = affine
+        self.track_running_stats = track_running_stats
+
+        if self.affine:
+            self.weight = Tensor(np.ones(num_features), requires_grad=True)
+            self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        else:
+            self.weight = None
+            self.bias = None
+
+        if self.track_running_stats:
+            self.running_mean = np.zeros(num_features, dtype=np.float32)
+            self.running_var = np.ones(num_features, dtype=np.float32)
+
+    def forward(self, x):
+        if x.ndim != 2:
+            raise ValueError("Only 2D inputs (B, C) are supported")
+
+        if self.training:
+            mean = x.data.mean(axis=0)
+            var = x.data.var(axis=0)
+
+            if self.track_running_stats:
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var
+
+        else:
+            mean = self.running_mean
+            var = self.running_var
+
+        x_hat = (x - Tensor(mean)) / (Tensor(var + self.eps) ** 0.5)
+
+        if self.affine:
+            return self.weight * x_hat + self.bias
+        else:
+            return x_hat

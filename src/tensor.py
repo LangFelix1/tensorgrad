@@ -1,6 +1,18 @@
 import cupy as cp
 import numpy as np
 
+_grad_enabled = True
+
+class no_grad:
+    def __enter__(self):
+        global _grad_enabled
+        self.prev = _grad_enabled
+        _grad_enabled = False
+
+    def __exit__(self, *args):
+        global _grad_enabled
+        _grad_enabled = self.prev
+
 class Tensor:
     def __init__(self, data, _prev=(), requires_grad=False):
         if not isinstance(data, cp.ndarray):
@@ -9,8 +21,8 @@ class Tensor:
             data = data.astype(cp.float32)
 
         self.data = data
-        self.requires_grad = requires_grad
-        self.grad = cp.zeros_like(data) if requires_grad else None
+        self.requires_grad = requires_grad and _grad_enabled
+        self.grad = cp.zeros_like(data) if self.requires_grad else None
 
         self._backward = lambda: None
         self._prev = set(_prev)
