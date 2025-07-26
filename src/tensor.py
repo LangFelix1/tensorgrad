@@ -164,6 +164,20 @@ class Tensor:
 
         return out / cp.array(divisor, dtype=self.data.dtype)
 
+    def var(self, dim=None, keepdim=False, unbiased=True):
+        mean = self.mean(dim=dim, keepdim=True)
+        sq_diff = (self - mean) ** 2
+        out = sq_diff.sum(dim=dim, keepdim=keepdim)
+
+        if dim is None:
+            count = self.data.size
+        else:
+            count = self.data.shape[dim] if isinstance(dim, int) else cp.prod([self.data.shape[d] for d in dim])
+
+        divisor = count - 1 if unbiased and count > 1 else count
+
+        return out / cp.array(divisor, dtype=self.data.dtype)
+
     def reshape(self, *shape):
         out_data = self.data.reshape(*shape)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
