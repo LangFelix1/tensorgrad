@@ -5,6 +5,7 @@ class Module:
     def __init__(self):
         self._modules = {}
         self._parameters = {}
+        self.training = True
 
     def parameters(self):
         params = list(self._parameters.values())
@@ -15,6 +16,15 @@ class Module:
     def zero_grad(self):
         for param in self.parameters():
             param.zero_grad()
+
+    def train(self, mode=True):
+        self.training = mode
+        for module in self._modules.values():
+            module.train(mode)
+        return self
+
+    def eval(self):
+        return self.train(False)
 
     def __setattr__(self, name, value):
         if isinstance(value, Module):
@@ -92,6 +102,9 @@ class MSELoss(Module):
         assert reduction in ("mean", "sum")
         self.reduction = reduction
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(reduction={self.reduction})"
+
     def forward(self, input, target):
         diff = input - target
         loss = diff * diff
@@ -106,6 +119,9 @@ class CrossEntropyLoss(Module):
         super().__init__()
         assert reduction in ("mean", "sum")
         self.reduction = reduction
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(reduction={self.reduction})"
 
     def forward(self, logits, targets):
         """
@@ -132,7 +148,7 @@ class Dropout(Module):
 
     def forward(self, x):
         if self.training:
-            mask = (np.random.rand(*x.shape) > self.p).astype(x.data.dtype)
+            mask = (cp.random.rand(*x.shape) > self.p).astype(x.data.dtype)
             return x * Tensor(mask) / (1 - self.p)
         else:
             return x
@@ -146,15 +162,15 @@ class BatchNorm1d(Module):
         self.track_running_stats = track_running_stats
 
         if self.affine:
-            self.weight = Tensor(np.ones(num_features), requires_grad=True)
-            self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+            self.weight = Tensor(cp.ones(num_features), requires_grad=True)
+            self.bias = Tensor(cp.zeros(num_features), requires_grad=True)
         else:
             self.weight = None
             self.bias = None
 
         if self.track_running_stats:
-            self.running_mean = np.zeros(num_features, dtype=np.float32)
-            self.running_var = np.ones(num_features, dtype=np.float32)
+            self.running_mean = cp.zeros(num_features, dtype=cp.float32)
+            self.running_var = cp.ones(num_features, dtype=cp.float32)
 
     def forward(self, x):
         if x.ndim != 2:
