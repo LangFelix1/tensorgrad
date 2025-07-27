@@ -227,3 +227,31 @@ class LayerNorm(Module):
             if self.bias is not None:
                 x_hat = x_hat + self.bias
         return x_hat
+    
+class Embedding(Module):
+    def __init__(self, num_embeddings, embedding_dim):
+        super().__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.weight = Tensor(cp.random.randn(num_embeddings, embedding_dim), requires_grad=True)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.num_embeddings}, {self.embedding_dim})"
+
+    def forward(self, indices):
+        embedded_data = self.weight.data[indices.data.astype(cp.int64)]
+        out = Tensor(embedded_data, _prev=(self.weight,), requires_grad=self.weight.requires_grad)
+
+        def _backward():
+            grad_output = out.grad
+            flat_indices = indices.data.ravel().astype(cp.int64)
+            flat_grads = grad_output.reshape(-1, self.embedding_dim)
+            print(flat_indices.dtype)
+
+            grad_weight = cp.zeros_like(self.weight.data)
+            cp.add.at(grad_weight, flat_indices, flat_grads)
+
+            Tensor._accumulate_grad(self.weight, grad_weight)
+
+        out._backward = _backward
+        return out
