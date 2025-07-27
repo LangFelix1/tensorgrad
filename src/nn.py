@@ -156,6 +156,7 @@ class Dropout(Module):
 class BatchNorm1d(Module):
     def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
         super().__init__()
+        self.num_features = num_features
         self.eps = eps
         self.momentum = momentum
         self.affine = affine
@@ -169,28 +170,30 @@ class BatchNorm1d(Module):
             self.bias = None
 
         if self.track_running_stats:
-            self.running_mean = cp.zeros(num_features, dtype=cp.float32)
-            self.running_var = cp.ones(num_features, dtype=cp.float32)
+            self.running_mean = Tensor(cp.zeros(num_features))
+            self.running_var = Tensor(cp.ones(num_features))
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.num_features}, eps={self.eps}, momentum={self.momentum}, affine={self.affine}, track_running_stats={self.track_running_stats})"
 
     def forward(self, x):
-        if x.ndim != 2:
-            raise ValueError("Only 2D inputs (B, C) are supported")
-
         if self.training:
-            mean = x.data.mean(axis=0)
-            var = x.data.var(axis=0)
+            reduce_dims = tuple(i for i in range(x.ndim) if i != 1)
+            mean = x.mean(dim=reduce_dims, keepdim=True)
+            var = x.var(dim=reduce_dims, keepdim=True, unbiased=False)
 
             if self.track_running_stats:
-                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
-                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var
-
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean.squeeze()
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.squeeze()
         else:
-            mean = self.running_mean
-            var = self.running_var
+            mean = self.running_mean.reshape((1, -1) + (1,) * (x.ndim - 2))
+            var = self.running_var.reshape((1, -1) + (1,) * (x.ndim - 2))
 
-        x_hat = (x - Tensor(mean)) / (Tensor(var + self.eps) ** 0.5)
+        x_hat = (x - mean) / ((var + self.eps) ** 0.5)
 
         if self.affine:
-            return self.weight * x_hat + self.bias
+            w = self.weight.reshape((1, -1) + (1,) * (x.ndim - 2))
+            b = self.bias.reshape((1, -1) + (1,) * (x.ndim - 2))
+            return x_hat * w + b
         else:
             return x_hat
