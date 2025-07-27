@@ -197,3 +197,33 @@ class BatchNorm1d(Module):
             return x_hat * w + b
         else:
             return x_hat
+        
+class LayerNorm(Module):
+    def __init__(self, normalized_shape, eps=1e-5, elementwise_affine=True, bias=True):
+        super().__init__()
+        self.eps = eps
+        self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
+        self.elementwise_affine = elementwise_affine
+        self.has_bias = bias
+
+        if elementwise_affine:
+            self.weight = Tensor(cp.ones(self.normalized_shape), requires_grad=True)
+            self.bias = Tensor(cp.zeros(self.normalized_shape), requires_grad=True) if bias else None
+        else:
+            self.weight = None
+            self.bias = None
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.normalized_shape}, eps={self.eps}, elementwise_affine={self.elementwise_affine}, bias={self.has_bias})"
+
+    def forward(self, x):
+        dims = tuple(range(-len(self.normalized_shape), 0))
+        mean = x.mean(dim=dims, keepdim=True)
+        var = x.var(dim=dims, keepdim=True, unbiased=False)
+        x_hat = (x - mean) / ((var + self.eps) ** 0.5)
+
+        if self.elementwise_affine:
+            x_hat = x_hat * self.weight
+            if self.bias is not None:
+                x_hat = x_hat + self.bias
+        return x_hat
