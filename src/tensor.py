@@ -126,6 +126,19 @@ class Tensor:
     def __rpow__(self, other):
         return Tensor._ensure_tensor(other) ** self
     
+    def __getitem__(self, idx):
+        out_data = self.data[idx]
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            grad = out.grad
+            grad_full = cp.zeros_like(self.data)
+            grad_full[idx] = grad
+            Tensor._accumulate_grad(self, grad_full)
+
+        out._backward = _backward
+        return out
+    
     def max(self, dim=None, keepdim=False):
         out_data = cp.max(self.data, axis=dim, keepdims=keepdim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
