@@ -49,6 +49,33 @@ class Module:
     def forward(self, *args, **kwargs):
         raise NotImplementedError
     
+    def state_dict(self):
+        state = {}
+        for name, param in self._parameters.items():
+            state[name] = param.data.copy()
+
+        for name, module in self._modules.items():
+            sub_state = module.state_dict()
+            for sub_name, value in sub_state.items():
+                state[f"{name}.{sub_name}"] = value
+
+        return state
+
+    def load_state_dict(self, state_dict):
+        for name, param in self._parameters.items():
+            if name in state_dict:
+                param.data[:] = state_dict[name]
+            else:
+                raise KeyError(f"{name} not found in state_dict")
+
+        for name, module in self._modules.items():
+            sub_state = {
+                k[len(name) + 1:]: v
+                for k, v in state_dict.items()
+                if k.startswith(f"{name}.")
+            }
+            module.load_state_dict(sub_state)
+    
 class Linear(Module):
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()

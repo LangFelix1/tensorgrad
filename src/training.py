@@ -1,4 +1,4 @@
-from tensor import no_grad
+from src.tensor import no_grad
 
 def train_one_epoch(model, dataloader, loss_fn, optimizer):
     model.train()

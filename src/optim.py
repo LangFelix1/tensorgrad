@@ -12,6 +12,34 @@ class Optimizer:
     def step(self):
         raise NotImplementedError
     
+    def state_dict(self):
+        return {
+            "hyperparams": self._get_hyperparams(),
+            "state": [
+                self._serialize_param_state(p) if p in self.state else None
+                for p in self.params
+            ],
+        }
+
+    def load_state_dict(self, state_dict):
+        self._set_hyperparams(state_dict["hyperparams"])
+        self.state = {}
+        for p, s in zip(self.params, state_dict["state"]):
+            if s is not None:
+                self.state[p] = self._deserialize_param_state(s)
+
+    def _get_hyperparams(self):
+        return {}
+
+    def _set_hyperparams(self, hyperparams):
+        pass
+
+    def _serialize_param_state(self, p):
+        return {}
+
+    def _deserialize_param_state(self, state):
+        return {}
+    
 class SGD(Optimizer):
     def __init__(self, params, lr=0.001, momentum=0., dampening=0., weight_decay=0., nesterov=False):
         super().__init__(params)
@@ -47,6 +75,32 @@ class SGD(Optimizer):
                     d_p = buf
 
             p.data -= self.lr * d_p
+
+    def _get_hyperparams(self):
+        return {
+            "lr": self.lr,
+            "momentum": self.momentum,
+            "dampening": self.dampening,
+            "weight_decay": self.weight_decay,
+            "nesterov": self.nesterov,
+        }
+    
+    def _set_hyperparams(self, hyperparams):
+        self.lr = hyperparams["lr"]
+        self.momentum = hyperparams["momentum"]
+        self.dampening = hyperparams["dampening"]
+        self.weight_decay = hyperparams["weight_decay"]
+        self.nesterov = hyperparams["nesterov"]
+    
+    def _serialize_param_state(self, p):
+        buf = self.state.get(p)
+        return {
+            "momentum_buffer": buf.copy() if buf is not None else None
+        }
+    
+    def _deserialize_param_state(self, p, state):
+        if state["momentum_buffer"] is not None:
+            self.state[p] = state["momentum_buffer"].copy()
 
 class Adam(Optimizer):
     def __init__(self, params, lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0., amsgrad=False):
@@ -100,6 +154,42 @@ class Adam(Optimizer):
 
             p.data -= self.lr * exp_avg_hat / denom
 
+    def _get_hyperparams(self):
+        return {
+            "lr": self.lr,
+            "betas": self.betas,
+            "eps": self.eps,
+            "weight_decay": self.weight_decay,
+            "amsgrad": self.amsgrad,
+        }
+    
+    def _set_hyperparams(self, hyperparams):
+        self.lr = hyperparams["lr"]
+        self.betas = tuple(hyperparams["betas"])
+        self.eps = hyperparams["eps"]
+        self.weight_decay = hyperparams["weight_decay"]
+        self.amsgrad = hyperparams["amsgrad"]
+
+    def _serialize_param_state(self, p):
+        s = self.state[p]
+        result = {
+            "step": s["step"],
+            "exp_avg": s["exp_avg"].copy(),
+            "exp_avg_sq": s["exp_avg_sq"].copy(),
+        }
+        if self.amsgrad and "max_exp_avg_sq" in s:
+            result["max_exp_avg_sq"] = s["max_exp_avg_sq"].copy()
+        return result
+    
+    def _deserialize_param_state(self, p, s):
+        self.state[p] = {
+            "step": s["step"],
+            "exp_avg": s["exp_avg"].copy(),
+            "exp_avg_sq": s["exp_avg_sq"].copy(),
+        }
+        if self.amsgrad and s.get("max_exp_avg_sq") is not None:
+            self.state[p]["max_exp_avg_sq"] = s["max_exp_avg_sq"].copy()
+
 class AdamW(Optimizer):
     def __init__(self, params, lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False):
         super().__init__(params)
@@ -150,3 +240,39 @@ class AdamW(Optimizer):
                 denom = cp.sqrt(exp_avg_sq / bias_correction2) + self.eps
 
             p.data -= self.lr * exp_avg_hat / denom
+
+    def _get_hyperparams(self):
+        return {
+            "lr": self.lr,
+            "betas": self.betas,
+            "eps": self.eps,
+            "weight_decay": self.weight_decay,
+            "amsgrad": self.amsgrad,
+        }
+    
+    def _set_hyperparams(self, hyperparams):
+        self.lr = hyperparams["lr"]
+        self.betas = tuple(hyperparams["betas"])
+        self.eps = hyperparams["eps"]
+        self.weight_decay = hyperparams["weight_decay"]
+        self.amsgrad = hyperparams["amsgrad"]
+
+    def _serialize_param_state(self, p):
+        s = self.state[p]
+        result = {
+            "step": s["step"],
+            "exp_avg": s["exp_avg"].copy(),
+            "exp_avg_sq": s["exp_avg_sq"].copy(),
+        }
+        if self.amsgrad and "max_exp_avg_sq" in s:
+            result["max_exp_avg_sq"] = s["max_exp_avg_sq"].copy()
+        return result
+    
+    def _deserialize_param_state(self, p, s):
+        self.state[p] = {
+            "step": s["step"],
+            "exp_avg": s["exp_avg"].copy(),
+            "exp_avg_sq": s["exp_avg_sq"].copy(),
+        }
+        if self.amsgrad and s.get("max_exp_avg_sq") is not None:
+            self.state[p]["max_exp_avg_sq"] = s["max_exp_avg_sq"].copy()
