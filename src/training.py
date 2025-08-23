@@ -30,3 +30,12 @@ def evaluate(model, dataloader, loss_fn):
             total_samples += x.shape[0]
 
     return total_loss / total_samples
+
+def fit(model, train_loader, loss_fn, optimizer, num_epochs=10, val_loader=None):
+    for epoch in range(num_epochs):
+        train_loss = train_one_epoch(model, train_loader, loss_fn, optimizer)
+        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.6f}")
+
+        if val_loader is not None:
+            val_loss = evaluate(model, val_loader, loss_fn)
+            print(f"            Val Loss: {val_loss:.6f}")
