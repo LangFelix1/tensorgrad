@@ -26,19 +26,19 @@ class Optimizer:
         self.state = {}
         for p, s in zip(self.params, state_dict["state"]):
             if s is not None:
-                self.state[p] = self._deserialize_param_state(s)
+                self.state[p] = self._deserialize_param_state(p, s)
 
     def _get_hyperparams(self):
-        return {}
+        raise NotImplementedError
 
     def _set_hyperparams(self, hyperparams):
-        pass
+        raise NotImplementedError
 
     def _serialize_param_state(self, p):
-        return {}
+        raise NotImplementedError
 
     def _deserialize_param_state(self, state):
-        return {}
+        raise NotImplementedError
     
 class SGD(Optimizer):
     def __init__(self, params, lr=0.001, momentum=0., dampening=0., weight_decay=0., nesterov=False):
