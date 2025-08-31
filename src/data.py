@@ -1,5 +1,7 @@
-import cupy as cp
+import src.backend as backend
 from src.tensor import Tensor
+
+xp = backend.backend()
 
 class Dataset:
     def __len__(self):
@@ -27,9 +29,9 @@ class DataLoader:
         self.drop_last = drop_last
 
     def __iter__(self):
-        self.indices = cp.arange(len(self.dataset))
+        self.indices = xp.arange(len(self.dataset))
         if self.shuffle:
-            cp.random.shuffle(self.indices)
+            xp.random.shuffle(self.indices)
         self.idx = 0
         return self
 
@@ -46,6 +48,6 @@ class DataLoader:
         self.idx += self.batch_size
 
         if isinstance(batch[0], tuple):
-            return tuple(Tensor(cp.stack([item.data for item in items])) for items in zip(*batch))
+            return tuple(Tensor(xp.stack([item.data for item in items])) for items in zip(*batch))
         else:
-            return Tensor(cp.stack([item.data for item in batch]))
+            return Tensor(xp.stack([item.data for item in batch]))

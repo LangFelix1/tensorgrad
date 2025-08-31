@@ -1,4 +1,6 @@
-import cupy as cp
+import src.backend as backend
+
+xp = backend.backend()
 
 class Optimizer:
     def __init__(self, params):
@@ -120,11 +122,11 @@ class Adam(Optimizer):
             if p not in self.state:
                 self.state[p] = {
                     "step": 0,
-                    "exp_avg": cp.zeros_like(p.data),
-                    "exp_avg_sq": cp.zeros_like(p.data),
+                    "exp_avg": xp.zeros_like(p.data),
+                    "exp_avg_sq": xp.zeros_like(p.data),
                 }
                 if self.amsgrad:
-                    self.state[p]["max_exp_avg_sq"] = cp.zeros_like(p.data)
+                    self.state[p]["max_exp_avg_sq"] = xp.zeros_like(p.data)
 
             state = self.state[p]
             d_p = p.grad.copy()
@@ -147,10 +149,10 @@ class Adam(Optimizer):
             exp_avg_hat = exp_avg / bias_correction1
             if self.amsgrad:
                 max_exp_avg_sq = state['max_exp_avg_sq']
-                cp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-                denom = cp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
+                xp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
+                denom = xp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
             else:
-                denom = cp.sqrt(exp_avg_sq / bias_correction2) + self.eps
+                denom = xp.sqrt(exp_avg_sq / bias_correction2) + self.eps
 
             p.data -= self.lr * exp_avg_hat / denom
 
@@ -208,11 +210,11 @@ class AdamW(Optimizer):
             if p not in self.state:
                 self.state[p] = {
                     "step": 0,
-                    "exp_avg": cp.zeros_like(p.data),
-                    "exp_avg_sq": cp.zeros_like(p.data),
+                    "exp_avg": xp.zeros_like(p.data),
+                    "exp_avg_sq": xp.zeros_like(p.data),
                 }
                 if self.amsgrad:
-                    self.state[p]["max_exp_avg_sq"] = cp.zeros_like(p.data)
+                    self.state[p]["max_exp_avg_sq"] = xp.zeros_like(p.data)
 
             state = self.state[p]
             d_p = p.grad.copy()
@@ -234,10 +236,10 @@ class AdamW(Optimizer):
             exp_avg_hat = exp_avg / bias_correction1
             if self.amsgrad:
                 max_exp_avg_sq = state['max_exp_avg_sq']
-                cp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-                denom = cp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
+                xp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
+                denom = xp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
             else:
-                denom = cp.sqrt(exp_avg_sq / bias_correction2) + self.eps
+                denom = xp.sqrt(exp_avg_sq / bias_correction2) + self.eps
 
             p.data -= self.lr * exp_avg_hat / denom
 

@@ -1,5 +1,7 @@
-import cupy as cp
+import src.backend as backend
 from src.tensor import Tensor
+
+xp = backend.backend()
 
 class Module:
     def __init__(self):
@@ -79,8 +81,8 @@ class Module:
 class Linear(Module):
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
-        self.weight = Tensor(cp.random.randn(out_features, in_features) * cp.sqrt(2. / in_features), requires_grad=True)
-        self.bias = Tensor(cp.zeros(out_features), requires_grad=True) if bias else None
+        self.weight = Tensor(xp.random.randn(out_features, in_features) * xp.sqrt(2. / in_features), requires_grad=True)
+        self.bias = Tensor(xp.zeros(out_features), requires_grad=True) if bias else None
 
     def __repr__(self):
         return f"{self.__class__.__name__}(in_features={self.weight.shape[1]}, out_features={self.weight.shape[0]}, bias={self.bias is not None})"
@@ -175,7 +177,7 @@ class Dropout(Module):
 
     def forward(self, x):
         if self.training:
-            mask = (cp.random.rand(*x.shape) > self.p).astype(x.data.dtype)
+            mask = (xp.random.rand(*x.shape) > self.p).astype(x.data.dtype)
             return x * Tensor(mask) / (1 - self.p)
         else:
             return x
@@ -190,15 +192,15 @@ class BatchNorm1d(Module):
         self.track_running_stats = track_running_stats
 
         if self.affine:
-            self.weight = Tensor(cp.ones(num_features), requires_grad=True)
-            self.bias = Tensor(cp.zeros(num_features), requires_grad=True)
+            self.weight = Tensor(xp.ones(num_features), requires_grad=True)
+            self.bias = Tensor(xp.zeros(num_features), requires_grad=True)
         else:
             self.weight = None
             self.bias = None
 
         if self.track_running_stats:
-            self.running_mean = Tensor(cp.zeros(num_features))
-            self.running_var = Tensor(cp.ones(num_features))
+            self.running_mean = Tensor(xp.zeros(num_features))
+            self.running_var = Tensor(xp.ones(num_features))
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.num_features}, eps={self.eps}, momentum={self.momentum}, affine={self.affine}, track_running_stats={self.track_running_stats})"
@@ -234,8 +236,8 @@ class LayerNorm(Module):
         self.has_bias = bias
 
         if elementwise_affine:
-            self.weight = Tensor(cp.ones(self.normalized_shape), requires_grad=True)
-            self.bias = Tensor(cp.zeros(self.normalized_shape), requires_grad=True) if bias else None
+            self.weight = Tensor(xp.ones(self.normalized_shape), requires_grad=True)
+            self.bias = Tensor(xp.zeros(self.normalized_shape), requires_grad=True) if bias else None
         else:
             self.weight = None
             self.bias = None
@@ -260,23 +262,23 @@ class Embedding(Module):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.weight = Tensor(cp.random.randn(num_embeddings, embedding_dim), requires_grad=True)
+        self.weight = Tensor(xp.random.randn(num_embeddings, embedding_dim), requires_grad=True)
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.num_embeddings}, {self.embedding_dim})"
 
     def forward(self, indices):
-        embedded_data = self.weight.data[indices.data.astype(cp.int64)]
+        embedded_data = self.weight.data[indices.data.astype(xp.int64)]
         out = Tensor(embedded_data, _prev=(self.weight,), requires_grad=self.weight.requires_grad)
 
         def _backward():
             grad_output = out.grad
-            flat_indices = indices.data.ravel().astype(cp.int64)
+            flat_indices = indices.data.ravel().astype(xp.int64)
             flat_grads = grad_output.reshape(-1, self.embedding_dim)
             print(flat_indices.dtype)
 
-            grad_weight = cp.zeros_like(self.weight.data)
-            cp.add.at(grad_weight, flat_indices, flat_grads)
+            grad_weight = xp.zeros_like(self.weight.data)
+            xp.add.at(grad_weight, flat_indices, flat_grads)
 
             Tensor._accumulate_grad(self.weight, grad_weight)
 

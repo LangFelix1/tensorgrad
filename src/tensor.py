@@ -1,6 +1,6 @@
-import cupy as cp
-import numpy as np
+import src.backend as backend
 
+xp = backend.backend()
 _grad_enabled = True
 
 class no_grad:
@@ -15,14 +15,14 @@ class no_grad:
 
 class Tensor:
     def __init__(self, data, _prev=(), requires_grad=False):
-        if not isinstance(data, cp.ndarray):
-            data = cp.array(data, dtype=cp.float32)
+        if not isinstance(data, xp.ndarray):
+            data = xp.array(data, dtype=xp.float32)
         else:
-            data = data.astype(cp.float32)
+            data = data.astype(xp.float32)
 
         self.data = data
         self.requires_grad = requires_grad and _grad_enabled
-        self.grad = cp.zeros_like(data) if self.requires_grad else None
+        self.grad = xp.zeros_like(data) if self.requires_grad else None
 
         self._backward = lambda: None
         self._prev = set(_prev)
@@ -87,9 +87,9 @@ class Tensor:
         out = Tensor(self.data ** other.data, (self, other),requires_grad=requires_grad)
 
         def _backward():
-            #with cp.errstate(divide='ignore', invalid='ignore'):
+            #with xp.errstate(divide='ignore', invalid='ignore'):
                 Tensor._accumulate_grad(self, Tensor._unbroadcast((other.data * self.data**(other.data - 1)) * out.grad, self.data.shape))
-                Tensor._accumulate_grad(other, Tensor._unbroadcast((out.data * cp.log(self.data)) * out.grad, other.data.shape))
+                Tensor._accumulate_grad(other, Tensor._unbroadcast((out.data * xp.log(self.data)) * out.grad, other.data.shape))
         out._backward = _backward
 
         return out
@@ -98,12 +98,12 @@ class Tensor:
         other = Tensor._ensure_tensor(other)
 
         requires_grad = self.requires_grad or other.requires_grad
-        out_data = cp.matmul(self.data, other.data)
+        out_data = xp.matmul(self.data, other.data)
         out = Tensor(out_data, (self, other), requires_grad=requires_grad)
 
         def _backward():
-            Tensor._accumulate_grad(self, Tensor._unbroadcast(cp.matmul(out.grad, other.data.T), self.data.shape))
-            Tensor._accumulate_grad(other, Tensor._unbroadcast(cp.matmul(self.data.T, out.grad), other.data.shape))
+            Tensor._accumulate_grad(self, Tensor._unbroadcast(xp.matmul(out.grad, other.data.T), self.data.shape))
+            Tensor._accumulate_grad(other, Tensor._unbroadcast(xp.matmul(self.data.T, out.grad), other.data.shape))
         out._backward = _backward
 
         return out
@@ -132,7 +132,7 @@ class Tensor:
 
         def _backward():
             grad = out.grad
-            grad_full = cp.zeros_like(self.data)
+            grad_full = xp.zeros_like(self.data)
             grad_full[idx] = grad
             Tensor._accumulate_grad(self, grad_full)
 
@@ -140,13 +140,13 @@ class Tensor:
         return out
     
     def max(self, dim=None, keepdim=False):
-        out_data = cp.max(self.data, axis=dim, keepdims=keepdim)
+        out_data = xp.max(self.data, axis=dim, keepdims=keepdim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            od = out_data if (dim is None or keepdim) else cp.expand_dims(out.data, axis=dim)  # need to expand out_data to make it broadcastable with self.data
+            od = out_data if (dim is None or keepdim) else xp.expand_dims(out.data, axis=dim)  # need to expand out_data to make it broadcastable with self.data
             mask = (self.data == od).astype(self.data.dtype)
-            count = cp.sum(mask, axis=dim, keepdims=True)
+            count = xp.sum(mask, axis=dim, keepdims=True)
             grad = (mask / count) * out.grad
             if not keepdim and dim is not None:
                 grad = Tensor._expand_like(grad, self.data.shape, dim)
@@ -156,7 +156,7 @@ class Tensor:
         return out
 
     def sum(self, dim=None, keepdim=False):
-        out_data = cp.sum(self.data, axis=dim, keepdims=keepdim)
+        out_data = xp.sum(self.data, axis=dim, keepdims=keepdim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -173,9 +173,9 @@ class Tensor:
         if dim is None:
             divisor = self.data.size
         else:
-            divisor = self.data.shape[dim] if isinstance(dim, int) else cp.prod([self.data.shape[d] for d in dim])
+            divisor = self.data.shape[dim] if isinstance(dim, int) else xp.prod([self.data.shape[d] for d in dim])
 
-        return out / cp.array(divisor, dtype=self.data.dtype)
+        return out / xp.array(divisor, dtype=self.data.dtype)
 
     def var(self, dim=None, keepdim=False, unbiased=True):
         mean = self.mean(dim=dim, keepdim=True)
@@ -185,11 +185,11 @@ class Tensor:
         if dim is None:
             count = self.data.size
         else:
-            count = self.data.shape[dim] if isinstance(dim, int) else cp.prod([self.data.shape[d] for d in dim])
+            count = self.data.shape[dim] if isinstance(dim, int) else xp.prod([self.data.shape[d] for d in dim])
 
         divisor = count - 1 if unbiased and count > 1 else count
 
-        return out / cp.array(divisor, dtype=self.data.dtype)
+        return out / xp.array(divisor, dtype=self.data.dtype)
 
     def reshape(self, *shape):
         out_data = self.data.reshape(*shape)
@@ -212,14 +212,14 @@ class Tensor:
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            reverse_dims = np.argsort(dims) if dims else None
+            reverse_dims = xp.argsort(dims) if dims else None
             Tensor._accumulate_grad(self, out.grad.transpose(*reverse_dims))
         out._backward = _backward
 
         return out
 
     def squeeze(self, dim=None):
-        out_data = cp.squeeze(self.data, dim)
+        out_data = xp.squeeze(self.data, dim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -229,23 +229,23 @@ class Tensor:
         return out
 
     def unsqueeze(self, dim):
-        out_data = cp.expand_dims(self.data, axis=dim)
+        out_data = xp.expand_dims(self.data, axis=dim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            Tensor._accumulate_grad(self, cp.squeeze(out.grad, axis=dim))
+            Tensor._accumulate_grad(self, xp.squeeze(out.grad, axis=dim))
 
         out._backward = _backward
 
         return out
     
     def gather(self, dim, index):
-        out_data = cp.take_along_axis(self.data, index.data, axis=dim)
+        out_data = xp.take_along_axis(self.data, index.data, axis=dim)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            grad = cp.zeros_like(self.data)
-            cp.put_along_axis(grad, index.data, out.grad, axis=dim)
+            grad = xp.zeros_like(self.data)
+            xp.put_along_axis(grad, index.data, out.grad, axis=dim)
             Tensor._accumulate_grad(self, grad)
 
         out._backward = _backward
@@ -253,7 +253,7 @@ class Tensor:
         return out
 
     def exp(self):
-        out_data = cp.exp(self.data)
+        out_data = xp.exp(self.data)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -263,18 +263,18 @@ class Tensor:
         return out
 
     def log(self):
-        out_data = cp.log(self.data)
+        out_data = xp.log(self.data)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            #with cp.errstate(divide='ignore', invalid='ignore'):
+            #with xp.errstate(divide='ignore', invalid='ignore'):
                 Tensor._accumulate_grad(self, out.grad / self.data)
         out._backward = _backward
 
         return out
 
     def tanh(self):
-        out_data = cp.tanh(self.data)
+        out_data = xp.tanh(self.data)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -284,7 +284,7 @@ class Tensor:
         return out
 
     def sigmoid(self):
-        out_data = 1 / (1 + cp.exp(-self.data))
+        out_data = 1 / (1 + xp.exp(-self.data))
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -294,7 +294,7 @@ class Tensor:
         return out
 
     def relu(self):
-        out_data = cp.maximum(0, self.data)
+        out_data = xp.maximum(0, self.data)
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
@@ -307,7 +307,7 @@ class Tensor:
         """
         Approximate implementation of GeLU, corresponds to torch.nn.functional.gelu with approximate="tanh"
         """
-        c = cp.sqrt(2 / cp.pi)
+        c = xp.sqrt(2 / xp.pi)
         return 0.5 * self * (1 + ((self + 0.044715 * self ** 3) * c).tanh())
     
     def logsumexp(self, dim=None, keepdim=False):
@@ -331,9 +331,9 @@ class Tensor:
         if not self.requires_grad:
             raise RuntimeError("Tensor does not require gradient")
         if gradient is None:
-            self.grad = cp.ones_like(self.data)
+            self.grad = xp.ones_like(self.data)
         else:
-            self.grad = cp.array(gradient, dtype=self.data.dtype)
+            self.grad = xp.array(gradient, dtype=self.data.dtype)
 
         visited = set()
         topo = []
@@ -353,13 +353,13 @@ class Tensor:
 
     def zero_grad(self):
         if self.requires_grad:
-          self.grad = cp.zeros_like(self.data)
+          self.grad = xp.zeros_like(self.data)
 
     def __repr__(self):
         """
         Format tensor content, for device info cupy always uses CUDA
         """
-        data_str = cp.array2string(self.data, separator=', ', prefix='tensor(')
+        data_str = xp.array2string(self.data, separator=', ', prefix='tensor(')
 
         details = [f"dtype={self.data.dtype}, requires_grad={self.requires_grad}"]
 
@@ -380,9 +380,9 @@ class Tensor:
             dims_reduced = (dims_reduced,)
 
         for dim in sorted(dims_reduced):
-            x = cp.expand_dims(x, axis=dim)
+            x = xp.expand_dims(x, axis=dim)
 
-        return cp.broadcast_to(x, target_shape)
+        return xp.broadcast_to(x, target_shape)
 
     @staticmethod
     def _unbroadcast(x, target_shape):
