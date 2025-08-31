@@ -1,7 +1,3 @@
-import src.backend as backend
-
-xp = backend.backend()
-
 class Optimizer:
     def __init__(self, params):
         self.params = list(params)
@@ -119,6 +115,7 @@ class Adam(Optimizer):
             if p.grad is None:
                 continue
 
+            xp = p.backend
             if p not in self.state:
                 self.state[p] = {
                     "step": 0,
@@ -150,9 +147,9 @@ class Adam(Optimizer):
             if self.amsgrad:
                 max_exp_avg_sq = state['max_exp_avg_sq']
                 xp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-                denom = xp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
+                denom = (max_exp_avg_sq / bias_correction2) ** 0.5 + self.eps
             else:
-                denom = xp.sqrt(exp_avg_sq / bias_correction2) + self.eps
+                denom = (exp_avg_sq / bias_correction2) ** 0.5 + self.eps
 
             p.data -= self.lr * exp_avg_hat / denom
 
@@ -207,6 +204,7 @@ class AdamW(Optimizer):
             if p.grad is None:
                 continue
 
+            xp = p.backend
             if p not in self.state:
                 self.state[p] = {
                     "step": 0,
@@ -237,9 +235,9 @@ class AdamW(Optimizer):
             if self.amsgrad:
                 max_exp_avg_sq = state['max_exp_avg_sq']
                 xp.maximum(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-                denom = xp.sqrt(max_exp_avg_sq / bias_correction2) + self.eps
+                denom = (max_exp_avg_sq / bias_correction2) ** 0.5 + self.eps
             else:
-                denom = xp.sqrt(exp_avg_sq / bias_correction2) + self.eps
+                denom = (exp_avg_sq / bias_correction2) ** 0.5 + self.eps
 
             p.data -= self.lr * exp_avg_hat / denom
 
