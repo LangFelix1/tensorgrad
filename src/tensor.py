@@ -61,7 +61,7 @@ class Tensor:
         return self.permute(*axes)
 
     def __add__(self, other):
-        other = Tensor._ensure_tensor(other)
+        other = Tensor._ensure_tensor(other, self.backend)
 
         requires_grad = self.requires_grad or other.requires_grad
         out = Tensor(self.data + other.data, (self, other), requires_grad=requires_grad)
@@ -77,7 +77,7 @@ class Tensor:
         return self + (-other)
 
     def __mul__(self, other):
-        other = Tensor._ensure_tensor(other)
+        other = Tensor._ensure_tensor(other, self.backend)
 
         requires_grad = self.requires_grad or other.requires_grad
         out = Tensor(self.data * other.data, (self, other), requires_grad=requires_grad)
@@ -93,7 +93,7 @@ class Tensor:
         return self * other**-1
 
     def __pow__(self, other):
-        other = Tensor._ensure_tensor(other)
+        other = Tensor._ensure_tensor(other, self.backend)
 
         requires_grad = self.requires_grad or other.requires_grad
         out = Tensor(self.data ** other.data, (self, other),requires_grad=requires_grad)
@@ -107,7 +107,7 @@ class Tensor:
         return out
 
     def __matmul__(self, other):
-        other = Tensor._ensure_tensor(other)
+        other = Tensor._ensure_tensor(other, self.backend)
 
         requires_grad = self.requires_grad or other.requires_grad
         out_data = self.backend.matmul(self.data, other.data)
@@ -127,16 +127,16 @@ class Tensor:
         return self + other
 
     def __rsub__(self, other):
-        return Tensor._ensure_tensor(other) - self
+        return Tensor._ensure_tensor(other, self.backend) - self
 
     def __rmul__(self, other):
         return self * other
 
     def __rtruediv__(self, other):
-        return Tensor._ensure_tensor(other) / self
+        return Tensor._ensure_tensor(other, self.backend) / self
 
     def __rpow__(self, other):
-        return Tensor._ensure_tensor(other) ** self
+        return Tensor._ensure_tensor(other, self.backend) ** self
 
     def __getitem__(self, idx):
         out_data = self.data[idx]
@@ -161,7 +161,7 @@ class Tensor:
             count = self.backend.sum(mask, axis=dim, keepdims=True)
             grad = (mask / count) * out.grad
             if not keepdim and dim is not None:
-                grad = Tensor._expand_like(grad, self.data.shape, dim, self.backend)
+                grad = Tensor._expand_like(grad, self.data.shape, dim)
             Tensor._accumulate_grad(self, grad)
         out._backward = _backward
 
@@ -174,7 +174,7 @@ class Tensor:
         def _backward():
             grad = out.grad
             if not keepdim and dim is not None:
-                grad = Tensor._expand_like(grad, self.data.shape, dim, self.backend)
+                grad = Tensor._expand_like(grad, self.data.shape)
             Tensor._accumulate_grad(self, grad)
         out._backward = _backward
 
@@ -398,12 +398,14 @@ class Tensor:
         return self.backend
 
     @staticmethod
-    def _expand_like(x, target_shape, dims_reduced, backend):
+    def _expand_like(x, target_shape, dims_reduced):
         """
         Expand tensor x to match target_shape by adding dimensions at dims_reduced
         """
         if isinstance(dims_reduced, int):
             dims_reduced = (dims_reduced,)
+
+        backend = x.backend
 
         for dim in sorted(dims_reduced):
             x = backend.expand_dims(x, axis=dim)
@@ -424,8 +426,8 @@ class Tensor:
         return x.reshape(target_shape)
 
     @staticmethod
-    def _ensure_tensor(x):
-        return x if isinstance(x, Tensor) else Tensor(x)
+    def _ensure_tensor(x, backend):
+        return x if isinstance(x, Tensor) else Tensor(x, device="cuda" if backend is cp else "cpu")
 
     @staticmethod
     def _accumulate_grad(tensor, grad):
@@ -442,7 +444,7 @@ class Tensor:
         return Tensor(data, requires_grad=requires_grad)
 
     @staticmethod
-    def randn(*shape, requires_grad=False, device="cpu"):
+    def randn(*shape, requires_grad=False, scale=1., device="cpu"):
         xp = np if device == "cpu" else cp
-        data = xp.random.randn(*shape).astype(xp.float32)
+        data = scale * xp.random.randn(*shape).astype(xp.float32)
         return Tensor(data, requires_grad=requires_grad)

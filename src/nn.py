@@ -74,12 +74,19 @@ class Module:
                 if k.startswith(f"{name}.")
             }
             module.load_state_dict(sub_state)
+
+    def to(self, device):
+        for name, param in self._parameters.items():
+            param.to(device)
+        for module in self._modules.values():
+            module.to(device)
+        return self
     
 class Linear(Module):
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
         gain = (2. / in_features) ** 0.5
-        self.weight = Tensor.randn(out_features, in_features, requires_grad=True) * gain
+        self.weight = Tensor.randn(out_features, in_features, requires_grad=True, scale=gain)
         self.bias = Tensor.zeros(out_features, requires_grad=True) if bias else None
 
     def __repr__(self):
@@ -166,6 +173,7 @@ class CrossEntropyLoss(Module):
             return loss.sum()
         
 class Dropout(Module):
+    # potential problem due to computational graph and device mismatching
     def __init__(self, p=0.5):
         super().__init__()
         self.p = p
