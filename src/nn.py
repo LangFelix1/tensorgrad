@@ -162,10 +162,10 @@ class CrossEntropyLoss(Module):
         logits: Tensor of shape (B, C)
         targets: Tensor of shape (B,) with integer class indices
         """
-        log_probs = logits.log_softmax(dim=1)                 # shape: (B, C)
-        targets = targets.unsqueeze(1)                        # shape: (B, 1)
-        picked_log_probs = log_probs.gather(targets, dim=1)   # shape: (B, 1)
-        loss = -picked_log_probs.squeeze(1)                   # shape: (B,)
+        log_probs = logits.log_softmax(dim=1)                         # shape: (B, C)
+        targets = targets.unsqueeze(1)                                # shape: (B, 1)
+        picked_log_probs = log_probs.gather(dim=1, index = targets)   # shape: (B, 1)
+        loss = -picked_log_probs.squeeze(1)                           # shape: (B,)
 
         if self.reduction == "mean":
             return loss.mean()
@@ -288,6 +288,138 @@ class Embedding(Module):
             backend.add.at(grad_weight, flat_indices, flat_grads)
 
             Tensor._accumulate_grad(self.weight, grad_weight)
+
+        out._backward = _backward
+        return out
+
+class Conv2d(Module):
+    """
+    Minimal NCHW Conv2d with stride, padding, dilation, bias (no groups).
+    PyTorch-like shapes:
+      input:  (N, C_in, H, W)
+      weight: (C_out, C_in, kH, kW)
+      bias:   (C_out,)
+      output: (N, C_out, H_out, W_out)
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
+        super().__init__()
+        kH, kW = self._to_pair(kernel_size)
+        self.in_channels = int(in_channels)
+        self.out_channels = int(out_channels)
+        self.kernel_size = (kH, kW)
+        self.stride = self._to_pair(stride)
+        self.padding = self._to_pair(padding)
+        self.dilation = self._to_pair(dilation)
+
+        # Kaiming fan_in init (like PyTorch default for Conv2d)
+        fan_in = in_channels * kH * kW
+        scale = (2.0 / fan_in) ** 0.5
+        self.weight = Tensor.randn(out_channels, in_channels, kH, kW, requires_grad=True, scale=scale)
+        self.bias = Tensor.zeros(out_channels, requires_grad=True) if bias else None
+
+    def __repr__(self):
+        return (f"{self.__class__.__name__}({self.in_channels}, {self.out_channels}, "
+                f"kernel_size={self.kernel_size}, stride={self.stride}, "
+                f"padding={self.padding}, dilation={self.dilation}, "
+                f"bias={self.bias is not None})")
+
+    @staticmethod
+    def _to_pair(v):
+        return (int(v), int(v)) if isinstance(v, int) else (int(v[0]), int(v[1]))
+
+    @staticmethod
+    def _out_hw(H, W, kH, kW, pH, pW, sH, sW, dH, dW):
+        eff_kH = (kH - 1) * dH + 1
+        eff_kW = (kW - 1) * dW + 1
+        Hout = (H + 2 * pH - eff_kH) // sH + 1
+        Wout = (W + 2 * pW - eff_kW) // sW + 1
+        return int(Hout), int(Wout)
+
+    @staticmethod
+    def _im2col(xp, x_pad, kH, kW, sH, sW, dH, dW, Hout, Wout):
+        # x_pad: (N, C, Hpad, Wpad)
+        N, C, Hp, Wp = x_pad.shape
+        cols = xp.empty((N, C * kH * kW, Hout * Wout), dtype=x_pad.dtype)
+        row = 0
+        for ky in range(kH):
+            y0 = ky * dH
+            y1 = y0 + sH * Hout
+            for kx in range(kW):
+                x0 = kx * dW
+                x1 = x0 + sW * Wout
+                patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]          # (N, C, Hout, Wout)
+                cols[:, row * C:(row + 1) * C, :] = patch.reshape(N, C, -1)
+                row += 1
+        return cols  # (N, C*kH*kW, Hout*Wout)
+
+    @staticmethod
+    def _col2im(xp, cols, N, C, H, W, kH, kW, pH, pW, sH, sW, dH, dW, Hout, Wout):
+        Hpad, Wpad = H + 2 * pH, W + 2 * pW
+        xg_pad = xp.zeros((N, C, Hpad, Wpad), dtype=cols.dtype)
+        row = 0
+        for ky in range(kH):
+            y0 = ky * dH
+            y1 = y0 + sH * Hout
+            for kx in range(kW):
+                x0 = kx * dW
+                x1 = x0 + sW * Wout
+                patch = cols[:, row * C:(row + 1) * C, :].reshape(N, C, Hout, Wout)
+                xg_pad[:, :, y0:y1:sH, x0:x1:sW] += patch
+                row += 1
+        return xg_pad[:, :, pH:pH + H, pW:pW + W]
+
+    def forward(self, x: Tensor):
+        xp = x.backend
+        N, C, H, W = x.shape
+        assert C == self.in_channels, f"in_channels={self.in_channels} but got input with C={C}"
+
+        kH, kW = self.kernel_size
+        sH, sW = self.stride
+        pH, pW = self.padding
+        dH, dW = self.dilation
+
+        Hout, Wout = self._out_hw(H, W, kH, kW, pH, pW, sH, sW, dH, dW)
+        if Hout <= 0 or Wout <= 0:
+            raise ValueError("Invalid output size; check stride/padding/dilation/kernel_size.")
+
+        # pad input and im2col
+        x_pad = xp.pad(x.data, ((0, 0), (0, 0), (pH, pH), (pW, pW)), mode="constant")
+        Xcols = self._im2col(xp, x_pad, kH, kW, sH, sW, dH, dW, Hout, Wout)     # (N, C*kH*kW, Hout*Wout)
+        Wcol = self.weight.data.reshape(self.out_channels, -1)                   # (Cout, C*kH*kW)
+
+        # batched GEMM: (N, Cout, Hout*Wout)
+        Ymat = xp.matmul(Wcol[None, :, :], Xcols)
+        if self.bias is not None:
+            Ymat += self.bias.data.reshape(1, -1, 1)
+        y_data = Ymat.reshape(N, self.out_channels, Hout, Wout)
+
+        requires_grad = x.requires_grad or self.weight.requires_grad or (self.bias is not None and self.bias.requires_grad)
+        out = Tensor(y_data, _prev=(x, self.weight) + ((self.bias,) if self.bias is not None else ()),
+                     requires_grad=requires_grad)
+
+        def _backward():
+            dY = out.grad                                # (N, Cout, Hout, Wout)
+            if dY is None:
+                return
+            dYmat = dY.reshape(N, self.out_channels, Hout * Wout)
+
+            # dW: sum over batch
+            # (N, Cout, Hout*Wout) @ (N, Hout*Wout, C*kH*kW) -> (N, Cout, C*kH*kW) -> sum over N
+            dWcol = xp.matmul(dYmat, Xcols.transpose(0, 2, 1)).sum(axis=0)      # (Cout, C*kH*kW)
+            dW = dWcol.reshape(self.weight.data.shape)
+
+            # dB
+            if self.bias is not None:
+                dB = dYmat.sum(axis=(0, 2))                                     # (Cout,)
+
+            # dX via W^T * dY
+            dXcols = xp.matmul(Wcol.T[None, :, :], dYmat)                        # (N, C*kH*kW, Hout*Wout)
+            dX = self._col2im(xp, dXcols, N, C, H, W, kH, kW, pH, pW, sH, sW, dH, dW, Hout, Wout)
+
+            Tensor._accumulate_grad(self.weight, dW)
+            if self.bias is not None:
+                Tensor._accumulate_grad(self.bias, dB.reshape(self.bias.data.shape))
+            Tensor._accumulate_grad(x, dX)
 
         out._backward = _backward
         return out

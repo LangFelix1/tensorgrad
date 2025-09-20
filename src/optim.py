@@ -24,7 +24,7 @@ class Optimizer:
         self.state = {}
         for p, s in zip(self.params, state_dict["state"]):
             if s is not None:
-                self.state[p] = self._deserialize_param_state(p, s)
+                self._deserialize_param_state(p, s)
 
     def _get_hyperparams(self):
         raise NotImplementedError
@@ -35,7 +35,7 @@ class Optimizer:
     def _serialize_param_state(self, p):
         raise NotImplementedError
 
-    def _deserialize_param_state(self, state):
+    def _deserialize_param_state(self, p, state):
         raise NotImplementedError
     
 class SGD(Optimizer):
