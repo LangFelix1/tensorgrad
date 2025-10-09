@@ -293,25 +293,16 @@ class Embedding(Module):
         return out
 
 class Conv2d(Module):
-    """
-    Minimal NCHW Conv2d with stride, padding, dilation, bias (no groups).
-    PyTorch-like shapes:
-      input:  (N, C_in, H, W)
-      weight: (C_out, C_in, kH, kW)
-      bias:   (C_out,)
-      output: (N, C_out, H_out, W_out)
-    """
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
         super().__init__()
-        kH, kW = self._to_pair(kernel_size)
-        self.in_channels = int(in_channels)
-        self.out_channels = int(out_channels)
-        self.kernel_size = (kH, kW)
-        self.stride = self._to_pair(stride)
-        self.padding = self._to_pair(padding)
-        self.dilation = self._to_pair(dilation)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
+        self.stride = (stride, stride) if isinstance(stride, int) else stride
+        self.padding = (padding, padding) if isinstance(padding, int) else padding
+        self.dilation = (dilation, dilation) if isinstance(dilation, int) else dilation
 
-        # Kaiming fan_in init (like PyTorch default for Conv2d)
+        kH, kW = kernel_size
         fan_in = in_channels * kH * kW
         scale = (2.0 / fan_in) ** 0.5
         self.weight = Tensor.randn(out_channels, in_channels, kH, kW, requires_grad=True, scale=scale)
@@ -324,10 +315,6 @@ class Conv2d(Module):
                 f"bias={self.bias is not None})")
 
     @staticmethod
-    def _to_pair(v):
-        return (int(v), int(v)) if isinstance(v, int) else (int(v[0]), int(v[1]))
-
-    @staticmethod
     def _out_hw(H, W, kH, kW, pH, pW, sH, sW, dH, dW):
         eff_kH = (kH - 1) * dH + 1
         eff_kW = (kW - 1) * dW + 1
@@ -336,90 +323,43 @@ class Conv2d(Module):
         return int(Hout), int(Wout)
 
     @staticmethod
-    def _im2col(xp, x_pad, kH, kW, sH, sW, dH, dW, Hout, Wout):
-        # x_pad: (N, C, Hpad, Wpad)
-        N, C, Hp, Wp = x_pad.shape
-        cols = xp.empty((N, C * kH * kW, Hout * Wout), dtype=x_pad.dtype)
-        row = 0
-        for ky in range(kH):
-            y0 = ky * dH
-            y1 = y0 + sH * Hout
-            for kx in range(kW):
-                x0 = kx * dW
-                x1 = x0 + sW * Wout
-                patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]          # (N, C, Hout, Wout)
-                cols[:, row * C:(row + 1) * C, :] = patch.reshape(N, C, -1)
-                row += 1
-        return cols  # (N, C*kH*kW, Hout*Wout)
-
-    @staticmethod
-    def _col2im(xp, cols, N, C, H, W, kH, kW, pH, pW, sH, sW, dH, dW, Hout, Wout):
-        Hpad, Wpad = H + 2 * pH, W + 2 * pW
-        xg_pad = xp.zeros((N, C, Hpad, Wpad), dtype=cols.dtype)
-        row = 0
-        for ky in range(kH):
-            y0 = ky * dH
-            y1 = y0 + sH * Hout
-            for kx in range(kW):
-                x0 = kx * dW
-                x1 = x0 + sW * Wout
-                patch = cols[:, row * C:(row + 1) * C, :].reshape(N, C, Hout, Wout)
-                xg_pad[:, :, y0:y1:sH, x0:x1:sW] += patch
-                row += 1
-        return xg_pad[:, :, pH:pH + H, pW:pW + W]
-
-    def forward(self, x: Tensor):
+    def _im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW):
+        """Take Tensor x (N,C,H,W), return Tensor (N, C*kH*kW, Hout*Wout)"""
         xp = x.backend
-        N, C, H, W = x.shape
-        assert C == self.in_channels, f"in_channels={self.in_channels} but got input with C={C}"
+        x_pad = xp.pad(x.data, ((0,0),(0,0),(pH,pH),(pW,pW)))
+        N, C, Hp, Wp = x_pad.shape
 
+        cols = []
+        for ky in range(kH):
+            y0 = ky * dH
+            y1 = y0 + sH * Hout
+            for kx in range(kW):
+                x0 = kx * dW
+                x1 = x0 + sW * Wout
+                patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]   # (N,C,Hout,Wout)
+                cols.append(patch.reshape(N, C, -1))
+        Xcols = xp.concatenate(cols, axis=1)   # (N, C*kH*kW, Hout*Wout)
+        return Tensor(Xcols, requires_grad=x.requires_grad, _prev=(x,))
+    
+    def forward(self, x: Tensor):
         kH, kW = self.kernel_size
         sH, sW = self.stride
         pH, pW = self.padding
         dH, dW = self.dilation
+        N, C, H, W = x.shape
 
         Hout, Wout = self._out_hw(H, W, kH, kW, pH, pW, sH, sW, dH, dW)
-        if Hout <= 0 or Wout <= 0:
-            raise ValueError("Invalid output size; check stride/padding/dilation/kernel_size.")
 
-        # pad input and im2col
-        x_pad = xp.pad(x.data, ((0, 0), (0, 0), (pH, pH), (pW, pW)), mode="constant")
-        Xcols = self._im2col(xp, x_pad, kH, kW, sH, sW, dH, dW, Hout, Wout)     # (N, C*kH*kW, Hout*Wout)
-        Wcol = self.weight.data.reshape(self.out_channels, -1)                   # (Cout, C*kH*kW)
+        # im2col gives us (N, C*kH*kW, Hout*Wout)
+        Xcols = self._im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW)
 
-        # batched GEMM: (N, Cout, Hout*Wout)
-        Ymat = xp.matmul(Wcol[None, :, :], Xcols)
+        # flatten weights (Cout, C*kH*kW)
+        Wcol = self.weight.reshape(self.out_channels, -1)
+
+        # batched matmul: (N, Cout, Hout*Wout)
+        Ymat = (Wcol @ Xcols).reshape(N, self.out_channels, Hout, Wout)
+
         if self.bias is not None:
-            Ymat += self.bias.data.reshape(1, -1, 1)
-        y_data = Ymat.reshape(N, self.out_channels, Hout, Wout)
+            Ymat = Ymat + self.bias.reshape(1, -1, 1, 1)
 
-        requires_grad = x.requires_grad or self.weight.requires_grad or (self.bias is not None and self.bias.requires_grad)
-        out = Tensor(y_data, _prev=(x, self.weight) + ((self.bias,) if self.bias is not None else ()),
-                     requires_grad=requires_grad)
-
-        def _backward():
-            dY = out.grad                                # (N, Cout, Hout, Wout)
-            if dY is None:
-                return
-            dYmat = dY.reshape(N, self.out_channels, Hout * Wout)
-
-            # dW: sum over batch
-            # (N, Cout, Hout*Wout) @ (N, Hout*Wout, C*kH*kW) -> (N, Cout, C*kH*kW) -> sum over N
-            dWcol = xp.matmul(dYmat, Xcols.transpose(0, 2, 1)).sum(axis=0)      # (Cout, C*kH*kW)
-            dW = dWcol.reshape(self.weight.data.shape)
-
-            # dB
-            if self.bias is not None:
-                dB = dYmat.sum(axis=(0, 2))                                     # (Cout,)
-
-            # dX via W^T * dY
-            dXcols = xp.matmul(Wcol.T[None, :, :], dYmat)                        # (N, C*kH*kW, Hout*Wout)
-            dX = self._col2im(xp, dXcols, N, C, H, W, kH, kW, pH, pW, sH, sW, dH, dW, Hout, Wout)
-
-            Tensor._accumulate_grad(self.weight, dW)
-            if self.bias is not None:
-                Tensor._accumulate_grad(self.bias, dB.reshape(self.bias.data.shape))
-            Tensor._accumulate_grad(x, dX)
-
-        out._backward = _backward
-        return out
+        return Ymat
