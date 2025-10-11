@@ -302,7 +302,7 @@ class Conv2d(Module):
         self.padding = (padding, padding) if isinstance(padding, int) else padding
         self.dilation = (dilation, dilation) if isinstance(dilation, int) else dilation
 
-        kH, kW = kernel_size
+        kH, kW = self.kernel_size
         fan_in = in_channels * kH * kW
         scale = (2.0 / fan_in) ** 0.5
         self.weight = Tensor.randn(out_channels, in_channels, kH, kW, requires_grad=True, scale=scale)
@@ -321,45 +321,23 @@ class Conv2d(Module):
         Hout = (H + 2 * pH - eff_kH) // sH + 1
         Wout = (W + 2 * pW - eff_kW) // sW + 1
         return int(Hout), int(Wout)
-
-    @staticmethod
-    def _im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW):
-        """Take Tensor x (N,C,H,W), return Tensor (N, C*kH*kW, Hout*Wout)"""
-        xp = x.backend
-        x_pad = xp.pad(x.data, ((0,0),(0,0),(pH,pH),(pW,pW)))
-        N, C, Hp, Wp = x_pad.shape
-
-        cols = []
-        for ky in range(kH):
-            y0 = ky * dH
-            y1 = y0 + sH * Hout
-            for kx in range(kW):
-                x0 = kx * dW
-                x1 = x0 + sW * Wout
-                patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]   # (N,C,Hout,Wout)
-                cols.append(patch.reshape(N, C, -1))
-        Xcols = xp.concatenate(cols, axis=1)   # (N, C*kH*kW, Hout*Wout)
-        return Tensor(Xcols, requires_grad=x.requires_grad, _prev=(x,))
     
     def forward(self, x: Tensor):
         kH, kW = self.kernel_size
         sH, sW = self.stride
         pH, pW = self.padding
         dH, dW = self.dilation
-        N, C, H, W = x.shape
 
+        N, _, H, W = x.shape
         Hout, Wout = self._out_hw(H, W, kH, kW, pH, pW, sH, sW, dH, dW)
 
-        # im2col gives us (N, C*kH*kW, Hout*Wout)
-        Xcols = self._im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW)
+        Xcols = Tensor._im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW)
 
-        # flatten weights (Cout, C*kH*kW)
         Wcol = self.weight.reshape(self.out_channels, -1)
-
-        # batched matmul: (N, Cout, Hout*Wout)
-        Ymat = (Wcol @ Xcols).reshape(N, self.out_channels, Hout, Wout)
+        Ymat = (Wcol @ Xcols)        
+        Y = Ymat.reshape(N, self.out_channels, Hout, Wout)
 
         if self.bias is not None:
-            Ymat = Ymat + self.bias.reshape(1, -1, 1, 1)
+            Y = Y + self.bias.reshape(1, -1, 1, 1)
 
-        return Ymat
+        return Y
