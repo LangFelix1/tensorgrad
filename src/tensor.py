@@ -396,6 +396,25 @@ class Tensor:
 
     def xp(self):
         return self.backend
+    
+    def _im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW):
+        """
+        x: (N, C, H, W) Tensor
+        returns Xcols: (N, C*kH*kW, Hout*Wout) Tensor
+        """
+        x_pad = x.pad2d((pH, pH, pW, pW))
+
+        cols = []
+        for ky in range(kH):
+            y0 = ky * dH
+            y1 = y0 + sH * Hout
+            for kx in range(kW):
+                x0 = kx * dW
+                x1 = x0 + sW * Wout
+                patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]
+                cols.append(patch.reshape(x.shape[0], x.shape[1], -1))
+        Xcols = Tensor.cat(cols, dim=1)
+        return Xcols
 
     @staticmethod
     def _expand_like(x, target_shape, dims_reduced):
