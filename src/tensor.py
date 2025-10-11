@@ -338,6 +338,32 @@ class Tensor:
 
     def log_softmax(self, dim=None):
         return self - self.logsumexp(dim=dim, keepdim=True)
+    
+    def pad2d(self, padding):
+        """
+        Zero-pad H and W. padding can be:
+        - int p      -> pad (p,p,p,p)
+        - (pH, pW)   -> pad (pH,pH,pW,pW)
+        - (t, b, l, r)
+        """
+        if isinstance(padding, int):
+            t = b = l = r = padding
+        elif len(padding) == 2:
+            t = b = int(padding[0]); l = r = int(padding[1])
+        else:
+            t, b, l, r = map(int, padding)
+
+        xp = self.backend
+        out_data = xp.pad(self.data, ((0,0),(0,0),(t,b),(l,r)), mode="constant")
+        out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
+
+        def _backward():
+            if out.grad is None: return
+            g = out.grad[:, :, t:t+self.shape[2], l:l+self.shape[3]]
+            Tensor._accumulate_grad(self, g)
+
+        out._backward = _backward
+        return out
 
     def backward(self, gradient=None):
         if not self.requires_grad:
@@ -397,6 +423,28 @@ class Tensor:
     def xp(self):
         return self.backend
     
+    @staticmethod
+    def cat(tensors, dim=0):
+        assert len(tensors) > 0
+        backend = tensors[0].backend
+        data = backend.concatenate([t.data for t in tensors], axis=dim)
+        requires_grad = any(t.requires_grad for t in tensors)
+        out = Tensor(data, _prev=tuple(tensors), requires_grad=requires_grad)
+
+        def _backward():
+            if out.grad is None: return
+            sizes = [t.shape[dim] for t in tensors]
+            start = 0
+            for t, sz in zip(tensors, sizes):
+                slc = [slice(None)] * out.grad.ndim
+                slc[dim] = slice(start, start + sz)
+                Tensor._accumulate_grad(t, out.grad[tuple(slc)])
+                start += sz
+
+        out._backward = _backward
+        return out
+
+    @staticmethod
     def _im2col(x, kH, kW, sH, sW, dH, dW, Hout, Wout, pH, pW):
         """
         x: (N, C, H, W) Tensor
