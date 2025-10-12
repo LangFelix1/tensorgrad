@@ -424,7 +424,7 @@ class Tensor:
         return self.backend
     
     @staticmethod
-    def cat(tensors, dim=0):
+    def _cat(tensors, dim=0):
         assert len(tensors) > 0
         backend = tensors[0].backend
         data = backend.concatenate([t.data for t in tensors], axis=dim)
