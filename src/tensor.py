@@ -457,7 +457,14 @@ class Tensor:
                 x1 = x0 + sW * Wout
                 patch = x_pad[:, :, y0:y1:sH, x0:x1:sW]
                 cols.append(patch.reshape(x.shape[0], x.shape[1], -1))
-        Xcols = Tensor.cat(cols, dim=1)
+        Xcols = Tensor._cat(cols, dim=1)
+        N, C = x.shape[0], x.shape[1]
+        K = kH * kW
+        HW = Hout * Wout
+
+        Xcols = Xcols.reshape(N, K, C, HW)        # (N, kH*kW, C, HW)
+        Xcols = Xcols.permute(0, 2, 1, 3)         # (N, C, kH*kW, HW)
+        Xcols = Xcols.reshape(N, C * K, HW)       # (N, C*kH*kW, HW)
         return Xcols
 
     @staticmethod
