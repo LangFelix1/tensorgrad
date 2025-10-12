@@ -114,8 +114,8 @@ class Tensor:
         out = Tensor(out_data, (self, other), requires_grad=requires_grad)
 
         def _backward():
-            Tensor._accumulate_grad(self, Tensor._unbroadcast(self.backend.matmul(out.grad, other.data.T), self.data.shape))
-            Tensor._accumulate_grad(other, Tensor._unbroadcast(self.backend.matmul(self.data.T, out.grad), other.data.shape))
+            Tensor._accumulate_grad(self, Tensor._unbroadcast(self.backend.matmul(out.grad, self.backend.swapaxes(other.data, -1, -2)), self.data.shape))
+            Tensor._accumulate_grad(other, Tensor._unbroadcast(self.backend.matmul(self.backend.swapaxes(self.data, -1, -2), out.grad), other.data.shape))
         out._backward = _backward
 
         return out
@@ -353,12 +353,10 @@ class Tensor:
         else:
             t, b, l, r = map(int, padding)
 
-        xp = self.backend
-        out_data = xp.pad(self.data, ((0,0),(0,0),(t,b),(l,r)), mode="constant")
+        out_data = self.backend.pad(self.data, ((0,0),(0,0),(t,b),(l,r)), mode="constant")
         out = Tensor(out_data, _prev=(self,), requires_grad=self.requires_grad)
 
         def _backward():
-            if out.grad is None: return
             g = out.grad[:, :, t:t+self.shape[2], l:l+self.shape[3]]
             Tensor._accumulate_grad(self, g)
 
@@ -425,14 +423,12 @@ class Tensor:
     
     @staticmethod
     def _cat(tensors, dim=0):
-        assert len(tensors) > 0
         backend = tensors[0].backend
         data = backend.concatenate([t.data for t in tensors], axis=dim)
         requires_grad = any(t.requires_grad for t in tensors)
         out = Tensor(data, _prev=tuple(tensors), requires_grad=requires_grad)
 
         def _backward():
-            if out.grad is None: return
             sizes = [t.shape[dim] for t in tensors]
             start = 0
             for t, sz in zip(tensors, sizes):
