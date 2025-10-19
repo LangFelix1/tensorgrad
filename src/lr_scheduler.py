@@ -12,9 +12,9 @@ class LRScheduler:
 class StepLR(LRScheduler):
     def __init__(self, optimizer, step_size, gamma=0.1, last_epoch=0):
         super().__init__(optimizer)
-        self.step_size = int(step_size)
-        self.gamma = float(gamma)
-        self.last_epoch = int(last_epoch)
+        self.step_size = step_size
+        self.gamma = gamma
+        self.last_epoch = last_epoch
 
     def step(self):
         self.last_epoch += 1
@@ -24,9 +24,9 @@ class StepLR(LRScheduler):
 class MultiStepLR(LRScheduler):
     def __init__(self, optimizer, milestones, gamma=0.1, last_epoch=0):
         super().__init__(optimizer)
-        self.milestones = sorted(int(m) for m in milestones)
-        self.gamma = float(gamma)
-        self.last_epoch = int(last_epoch)
+        self.milestones = sorted(m for m in milestones)
+        self.gamma = gamma
+        self.last_epoch = last_epoch
 
     def step(self):
         self.last_epoch += 1
@@ -36,9 +36,9 @@ class MultiStepLR(LRScheduler):
 class ExponentialLR(LRScheduler):
     def __init__(self, optimizer, gamma, last_epoch=0):
         super().__init__(optimizer)
-        self.gamma = float(gamma)
+        self.gamma = gamma
         self.base_lr = optimizer.lr
-        self.last_epoch = int(last_epoch)
+        self.last_epoch = last_epoch
 
     def step(self):
         self.last_epoch += 1
@@ -47,10 +47,10 @@ class ExponentialLR(LRScheduler):
 class CosineAnnealingLR(LRScheduler):
     def __init__(self, optimizer, T_max, eta_min=0.0, last_epoch=0):
         super().__init__(optimizer)
-        self.T_max = int(T_max)
-        self.eta_min = float(eta_min)
+        self.T_max = T_max
+        self.eta_min = eta_min
         self.base_lr = optimizer.lr
-        self.last_epoch = int(last_epoch)
+        self.last_epoch = last_epoch
 
     def step(self):
         self.last_epoch += 1
@@ -60,11 +60,11 @@ class CosineAnnealingLR(LRScheduler):
 class ReduceLROnPlateau(LRScheduler):
     def __init__(self, optimizer, factor=0.1, patience=5, threshold=1e-4, min_lr=0.0, cooldown=0):
         super().__init__(optimizer)
-        self.factor = float(factor)
-        self.patience = int(patience)
-        self.threshold = float(threshold)
-        self.min_lr = float(min_lr)
-        self.cooldown = int(cooldown)
+        self.factor = factor
+        self.patience = patience
+        self.threshold = threshold
+        self.min_lr = min_lr
+        self.cooldown = cooldown
         self.best = None
         self.bad = 0
         self.cool = 0
@@ -89,10 +89,10 @@ class WarmupCosineLR(LRScheduler):
     def __init__(self, optimizer, warmup_steps, T_max, eta_min=0.0, lr_warmup_start=1e-8):
         super().__init__(optimizer)
         self.base_lr = optimizer.lr
-        self.warmup_steps = int(warmup_steps)
-        self.T_max = int(T_max)
-        self.eta_min = float(eta_min)
-        self.lr_warmup_start = float(lr_warmup_start)
+        self.warmup_steps = warmup_steps
+        self.T_max = T_max
+        self.eta_min = eta_min
+        self.lr_warmup_start = lr_warmup_start
         self.t = 0
 
     def step(self):
