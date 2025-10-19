@@ -84,3 +84,23 @@ class ReduceLROnPlateau(LRScheduler):
                     self.optimizer.lr = new_lr
                     self.cool = self.cooldown
                 self.bad = 0
+
+class WarmupCosineLR(LRScheduler):
+    def __init__(self, optimizer, warmup_steps, T_max, eta_min=0.0, lr_warmup_start=1e-8):
+        super().__init__(optimizer)
+        self.base_lr = optimizer.lr
+        self.warmup_steps = int(warmup_steps)
+        self.T_max = int(T_max)
+        self.eta_min = float(eta_min)
+        self.lr_warmup_start = float(lr_warmup_start)
+        self.t = 0
+
+    def step(self):
+        self.t += 1
+        if self.t <= self.warmup_steps:
+            a = (self.base_lr - self.lr_warmup_start) / max(1, self.warmup_steps)
+            self.optimizer.lr = self.lr_warmup_start + a * self.t
+        else:
+            tw = self.t - self.warmup_steps
+            T = max(1, self.T_max - self.warmup_steps)
+            self.optimizer.lr = self.eta_min + 0.5 * (self.base_lr - self.eta_min) * (1 + np.cos(np.pi * min(tw, T) / T))
