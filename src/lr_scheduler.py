@@ -1,3 +1,5 @@
+import numpy as np
+
 class LRScheduler:
     def __init__(self, optimizer):
         self.optimizer = optimizer
@@ -41,3 +43,44 @@ class ExponentialLR(LRScheduler):
     def step(self):
         self.last_epoch += 1
         self.optimizer.lr = self.base_lr * (self.gamma ** self.last_epoch)
+
+class CosineAnnealingLR(LRScheduler):
+    def __init__(self, optimizer, T_max, eta_min=0.0, last_epoch=0):
+        super().__init__(optimizer)
+        self.T_max = int(T_max)
+        self.eta_min = float(eta_min)
+        self.base_lr = optimizer.lr
+        self.last_epoch = int(last_epoch)
+
+    def step(self):
+        self.last_epoch += 1
+        t = min(self.last_epoch, self.T_max)
+        self.optimizer.lr = self.eta_min + 0.5 * (self.base_lr - self.eta_min) * (1 + np.cos(np.pi * t / self.T_max))
+
+class ReduceLROnPlateau(LRScheduler):
+    def __init__(self, optimizer, factor=0.1, patience=5, threshold=1e-4, min_lr=0.0, cooldown=0):
+        super().__init__(optimizer)
+        self.factor = float(factor)
+        self.patience = int(patience)
+        self.threshold = float(threshold)
+        self.min_lr = float(min_lr)
+        self.cooldown = int(cooldown)
+        self.best = None
+        self.bad = 0
+        self.cool = 0
+
+    def step(self, metric):
+        if self.cool > 0:
+            self.cool -= 1
+        improved = (self.best is None) or (metric < self.best - self.threshold)
+        if improved:
+            self.best = metric
+            self.bad = 0
+        else:
+            self.bad += 1
+            if self.bad > self.patience and self.cool == 0:
+                new_lr = max(self.optimizer.lr * self.factor, self.min_lr)
+                if new_lr < self.optimizer.lr:
+                    self.optimizer.lr = new_lr
+                    self.cool = self.cooldown
+                self.bad = 0
