@@ -1,5 +1,5 @@
 from src.tensor import no_grad
-from lr_scheduler import ReduceLROnPlateau
+from src.lr_scheduler import ReduceLROnPlateau
 
 def train_one_epoch(model, dataloader, loss_fn, optimizer):
     model.train()

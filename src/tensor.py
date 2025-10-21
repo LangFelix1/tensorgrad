@@ -1,5 +1,24 @@
-import cupy as cp
 import numpy as np
+try:
+    import cupy as cp
+    _HAS_CUPY = True
+except Exception:
+    cp = None
+    _HAS_CUPY = False
+
+def _is_cupy_array(x):
+    return _HAS_CUPY and hasattr(cp, "ndarray") and isinstance(x, cp.ndarray)
+
+def _normalize_device(device):
+    if device is None:
+        return None
+    if isinstance(device, str):
+        dev = device.lower()
+        if dev.startswith("cuda"):
+            return "cuda"
+        if dev == "cpu":
+            return "cpu"
+    raise ValueError(f"Unknown device spec: {device!r}")
 
 _grad_enabled = True
 
@@ -15,26 +34,31 @@ class no_grad:
 
 class Tensor:
     def __init__(self, data, _prev=(), requires_grad=False, device=None):
-        if device == "cuda":
-            self.backend = cp
-            data = cp.array(data, dtype=cp.float32)
-        elif device == "cpu":
-            self.backend = np
-            data = np.array(data, dtype=np.float32)
+        dev = _normalize_device(device)
+
+        if dev == "cuda":
+            if not _HAS_CUPY:
+                raise RuntimeError("CUDA requested but CuPy is not installed/available.")
+            backend = cp
+            data = cp.asarray(data, dtype=cp.float32)
+        elif dev == "cpu":
+            backend = np
+            data = np.asarray(data, dtype=np.float32)
         else:
-            if isinstance(data, cp.ndarray):
-                self.backend = cp
+            if _is_cupy_array(data):
+                backend = cp
                 data = data.astype(cp.float32)
             elif isinstance(data, np.ndarray):
-                self.backend = np
+                backend = np
                 data = data.astype(np.float32)
             else:
-                self.backend = np
-                data = np.array(data, dtype=np.float32)
+                backend = np
+                data = np.asarray(data, dtype=np.float32)
 
+        self.backend = backend
         self.data = data
-        self.requires_grad = requires_grad and _grad_enabled
-        self.grad = self.backend.zeros_like(data) if self.requires_grad else None
+        self.requires_grad = bool(requires_grad) and _grad_enabled
+        self.grad = self.backend.zeros_like(self.data) if self.requires_grad else None
 
         self._backward = lambda: None
         self._prev = set(_prev)
@@ -396,25 +420,24 @@ class Tensor:
         Format tensor content, for device info cupy always uses CUDA
         """
         data_str = self.backend.array2string(self.data, separator=', ', prefix='tensor(')
-
         details = [f"dtype={self.data.dtype}, requires_grad={self.requires_grad}"]
 
-        try:
-            device_str = f"cuda:{self.data.device.id}"
-            details.append(f"device='{device_str}'")
-        except Exception:
-            pass
+        dev = "cuda" if (_HAS_CUPY and self.backend is cp) else "cpu"
+        details.append(f"device='{dev}'")
 
         return f"tensor({data_str}, {', '.join(details)})"
 
     def to(self, device):
-        if device == "cpu" and self.backend is cp:
+        dev = _normalize_device(device)
+        if dev == "cpu" and _HAS_CUPY and self.backend is cp:
             self.data = cp.asnumpy(self.data)
             self.grad = cp.asnumpy(self.grad) if self.grad is not None else None
             self.backend = np
-        elif device == "cuda" and self.backend is np:
-            self.data = cp.array(self.data)
-            self.grad = cp.array(self.grad) if self.grad is not None else None
+        elif dev == "cuda" and self.backend is not (cp if _HAS_CUPY else None):
+            if not _HAS_CUPY:
+                raise RuntimeError("CUDA requested but CuPy is not installed/available.")
+            self.data = cp.asarray(self.data)
+            self.grad = cp.asarray(self.grad) if self.grad is not None else None
             self.backend = cp
         return self
 
@@ -497,7 +520,9 @@ class Tensor:
 
     @staticmethod
     def _ensure_tensor(x, backend):
-        return x if isinstance(x, Tensor) else Tensor(x, device="cuda" if backend is cp else "cpu")
+        if isinstance(x, Tensor):
+            return x
+        return Tensor(x, device="cuda" if _HAS_CUPY and backend is cp else "cpu")
 
     @staticmethod
     def _accumulate_grad(tensor, grad):
@@ -509,12 +534,24 @@ class Tensor:
 
     @staticmethod
     def zeros(*shape, requires_grad=False, device="cpu"):
-        xp = np if device == "cpu" else cp
+        dev = _normalize_device(device) or "cpu"
+        if dev == "cuda":
+            if not _HAS_CUPY:
+                raise RuntimeError("CUDA requested but CuPy is not installed/available.")
+            xp = cp
+        else:
+            xp = np
         data = xp.zeros(shape, dtype=xp.float32)
         return Tensor(data, requires_grad=requires_grad)
 
     @staticmethod
     def randn(*shape, requires_grad=False, scale=1., device="cpu"):
-        xp = np if device == "cpu" else cp
+        dev = _normalize_device(device) or "cpu"
+        if dev == "cuda":
+            if not _HAS_CUPY:
+                raise RuntimeError("CUDA requested but CuPy is not installed/available.")
+            xp = cp
+        else:
+            xp = np
         data = scale * xp.random.randn(*shape).astype(xp.float32)
         return Tensor(data, requires_grad=requires_grad)
